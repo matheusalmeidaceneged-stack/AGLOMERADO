@@ -23,9 +23,12 @@ export function NavBar() {
   return (
     <div className="nav">
       <span className="brand">CNL — Importação e Duplicidade</span>
+      <a href="/dashboard">Dashboard</a>
       <a href="/import">Importar</a>
       <a href="/historico">Histórico</a>
       <a href="/duplicados">Instalações duplicadas</a>
+      <a href="/aglomerados">Mapa</a>
+      <a href="/auditorias">Auditoria</a>
       <span className="hint">{email}</span>
       <button className="secondary" onClick={signOut}>Sair</button>
     </div>
