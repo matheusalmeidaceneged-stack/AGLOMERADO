@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/supabase/useAuth';
 const ROTULOS: Record<string, string> = {
   importacao_iniciada: 'Importação iniciada',
   importacao_finalizada: 'Importação finalizada',
+  analise_aglomerado: 'Análise de aglomerado',
 };
 
 export default function Auditorias() {
