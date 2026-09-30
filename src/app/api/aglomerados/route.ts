@@ -13,14 +13,17 @@ export async function GET(req: NextRequest) {
   const limit = Math.min(Number(sp.get('limit')) || 1000, 2000);
   const nota = sp.get('nota')?.trim().toUpperCase();
   const agente = sp.get('agente')?.trim().toUpperCase();
-  const status = sp.get('status');
+  const status = sp.get('status'); // aceita 1 valor ou uma lista "pendente,em_analise"
   const suspeito = sp.get('suspeito') === '1';
 
   let q = supabaseAdmin().from('aglomerados').select(COLUNAS)
     .gte('qtd_execucoes', min).order('qtd_execucoes', { ascending: false }).limit(limit);
   if (nota) q = q.contains('notas_lista', [nota]);
   if (agente) q = q.contains('agentes', [agente]);
-  if (status) q = q.eq('status_auditoria', status);
+  if (status) {
+    const lista = status.split(',').map(s => s.trim()).filter(Boolean);
+    q = lista.length > 1 ? q.in('status_auditoria', lista) : q.eq('status_auditoria', lista[0]);
+  }
   if (suspeito) q = q.eq('suspeito', true);
 
   const { data, error } = await q;

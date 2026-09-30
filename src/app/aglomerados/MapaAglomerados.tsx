@@ -10,7 +10,7 @@ const STATUS: Record<string, { label: string; cor: string }> = {
   procedente: { label: 'Irregularidade confirmada', cor: '#b91c1c' },
   improcedente: { label: 'Sem irregularidade', cor: '#16a34a' },
 };
-const FILTRO_PADRAO = { min: '10', nota: '', agente: '', status: '', suspeito: false };
+const FILTRO_PADRAO = { min: '10', nota: '', agente: '', status: 'pendente,em_analise', suspeito: false };
 
 function distM(lat1: number, lng1: number, lat2: number, lng2: number) {
   const R = 6371000, r = Math.PI / 180;
@@ -177,6 +177,7 @@ export function MapaAglomerados() {
                   <label>Agente<input type="text" value={f.agente} onChange={e => setF({ ...f, agente: e.target.value })} /></label>
                   <label>Auditoria
                     <select value={f.status} onChange={e => setF({ ...f, status: e.target.value })}>
+                      <option value="pendente,em_analise">Em aberto (pendente + em análise)</option>
                       <option value="">Todas</option>
                       {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
                     </select></label>
@@ -189,7 +190,7 @@ export function MapaAglomerados() {
               </div>
 
               <div className="card">
-                <h3>Ranking <span className="hint" style={{ fontWeight: 400 }}>· {lista.length} aglomerado(s) · {resumo.susp} candidato(s) · {resumo.pend} pendente(s)</span></h3>
+                <h3>Ranking <span className="hint" style={{ fontWeight: 400 }}>· {lista.length} aglomerado(s) nesse filtro · {resumo.susp} candidato(s)</span></h3>
                 <div className="rk-list">
                   {lista.map(a => (
                     <div key={a.id} className="rk-item" style={{ borderLeftColor: corItem(a) }} onClick={() => abrir(a.id)}>
