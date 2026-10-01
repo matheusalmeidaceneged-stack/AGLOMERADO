@@ -97,7 +97,7 @@ export default function Auditorias() {
             <thead>
               <tr>
                 <th>Quando</th><th>Usuário</th><th>Aglomerado</th><th>Auditoria</th>
-                <th style={{ minWidth: 220 }}>Observação</th><th style={{ minWidth: 220 }}>Tratativa</th>
+                <th style={{ minWidth: 220 }}>Observação</th><th style={{ minWidth: 220 }}>Tratativa</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -119,6 +119,12 @@ function LinhaRegistro({ reg, salvando, onSalvar }: { reg: any; salvando: boolea
   const [tDias, setTDias] = useState(reg.tratativa_dias_suspensao ?? '');
   useEffect(() => { setObs(reg.observacao ?? ''); setTTipo(reg.tratativa_tipo ?? ''); setTDias(reg.tratativa_dias_suspensao ?? ''); }, [reg.observacao, reg.tratativa_tipo, reg.tratativa_dias_suspensao]);
 
+  const sujo = obs !== (reg.observacao ?? '') || tTipo !== (reg.tratativa_tipo ?? '') || String(tDias) !== String(reg.tratativa_dias_suspensao ?? '');
+
+  function salvarTudo() {
+    onSalvar({ observacao: obs, tratativa_tipo: tTipo || null, tratativa_dias_suspensao: tTipo === 'suspensao' ? tDias : null });
+  }
+
   const resumo = reg.tipo === 'aglomerado'
     ? `${reg.qtd_execucoes} baixas · ${reg.nota ?? '—'}${reg.agentes?.length ? ` · ${reg.agentes.slice(0, 2).join(', ')}${reg.agentes.length > 2 ? '…' : ''}` : ''}`
     : `${reg.qtd_execucoes} baixas (subgrupo) · ${reg.nota ?? 'todas as notas'}${(reg.filtro_data_de || reg.filtro_data_ate) ? ` · ${reg.filtro_data_de ?? '…'} a ${reg.filtro_data_ate ?? '…'}` : ''}`;
@@ -130,22 +136,23 @@ function LinhaRegistro({ reg, salvando, onSalvar }: { reg: any; salvando: boolea
       <td><Link href={`/aglomerados?abrir=${reg.aglomerado_id}`}>{resumo}</Link></td>
       <td><span className="badge" style={{ background: STATUS[reg.status]?.cor ?? '#64748b' }}>{STATUS[reg.status]?.label ?? reg.status}</span></td>
       <td>
-        <textarea value={obs} onChange={e => setObs(e.target.value)} onBlur={() => obs !== (reg.observacao ?? '') && onSalvar({ observacao: obs })}
-          style={{ minHeight: 44, fontSize: '.8rem' }} placeholder="Observação…" />
+        <textarea value={obs} onChange={e => setObs(e.target.value)} style={{ minHeight: 44, fontSize: '.8rem' }} placeholder="Observação…" />
       </td>
       <td>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <select value={tTipo} onChange={e => { const v = e.target.value; setTTipo(v); onSalvar({ tratativa_tipo: v || null, tratativa_dias_suspensao: v === 'suspensao' ? tDias : null }); }} style={{ width: 150 }}>
+          <select value={tTipo} onChange={e => setTTipo(e.target.value)} style={{ width: 150 }}>
             <option value="">Sem tratativa</option>
             {Object.entries(TRATATIVAS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
           </select>
           {tTipo === 'suspensao' && (
-            <input type="number" min={1} placeholder="dias" value={tDias} onChange={e => setTDias(e.target.value)}
-              onBlur={() => onSalvar({ tratativa_tipo: 'suspensao', tratativa_dias_suspensao: tDias })}
-              style={{ width: 68 }} />
+            <input type="number" min={1} placeholder="dias" value={tDias} onChange={e => setTDias(e.target.value)} style={{ width: 68 }} />
           )}
-          {salvando && <span className="hint">salvando…</span>}
         </div>
+      </td>
+      <td>
+        <button className="primary" style={{ marginTop: 0 }} disabled={!sujo || salvando} onClick={salvarTudo}>
+          {salvando ? 'Salvando…' : 'Salvar'}
+        </button>
       </td>
     </tr>
   );
