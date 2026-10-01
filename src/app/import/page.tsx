@@ -1,2 +1,11 @@
 import { ImportWizard } from './ImportWizard';
-export default function ImportPage() { return <ImportWizard />; }
+import { HistoricoImportacoes } from './HistoricoImportacoes';
+
+export default function ImportPage() {
+  return (
+    <div>
+      <ImportWizard />
+      <HistoricoImportacoes />
+    </div>
+  );
+}

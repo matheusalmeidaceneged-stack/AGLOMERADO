@@ -10,8 +10,6 @@ const STATUS: Record<string, { label: string; cor: string }> = {
   improcedente: { label: 'Sem irregularidade', cor: '#16a34a' },
 };
 const ACOES: Record<string, string> = {
-  importacao_iniciada: 'Importação iniciada',
-  importacao_finalizada: 'Importação finalizada',
   analise_aglomerado: 'Análise de aglomerado',
   analise_subgrupo_aglomerado: 'Tratativa de subgrupo',
 };
@@ -28,7 +26,7 @@ export default function Auditorias() {
   useEffect(() => {
     if (!token) return;
     fetch('/api/auditorias', { headers: { Authorization: `Bearer ${token}` } })
-      .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error); setDados(j.auditorias ?? []); })
+      .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error); setDados((j.auditorias ?? []).filter((a: any) => !a.tipo.startsWith('importacao'))); })
       .catch(e => setErro(e.message));
   }, [token]);
 
@@ -92,7 +90,6 @@ export default function Auditorias() {
             <tbody>
               {filtrados.map(a => {
                 const d = a.detalhes ?? {};
-                const ehAnalise = EH_ANALISE.includes(a.tipo);
                 const ehSubgrupo = a.tipo === 'analise_subgrupo_aglomerado';
                 return (
                   <tr key={a.id}>
@@ -100,23 +97,17 @@ export default function Auditorias() {
                     <td>{a.usuario_email ?? '—'}</td>
                     <td><span className="tag">{ACOES[a.tipo] ?? a.tipo}</span></td>
                     <td>
-                      {ehAnalise ? (
-                        <Link href={`/aglomerados?abrir=${a.referencia_id}`}>
-                          {d.qtd_execucoes ?? '—'} baixas{ehSubgrupo ? ' (subgrupo)' : ''} · {d.nota_dominante ?? d.filtro_nota ?? 'todas as notas'}
-                          {ehSubgrupo && (d.filtro_data_de || d.filtro_data_ate) ? ` · ${d.filtro_data_de ?? '…'} a ${d.filtro_data_ate ?? '…'}` : ''}
-                          {!ehSubgrupo && d.agentes?.length ? ` · ${d.agentes.slice(0, 2).join(', ')}${d.agentes.length > 2 ? '…' : ''}` : ''}
-                        </Link>
-                      ) : a.tipo.startsWith('importacao') ? (
-                        <Link href="/historico">ver na importação</Link>
-                      ) : '—'}
+                      <Link href={`/aglomerados?abrir=${a.referencia_id}`}>
+                        {d.qtd_execucoes ?? '—'} baixas{ehSubgrupo ? ' (subgrupo)' : ''} · {d.nota_dominante ?? d.filtro_nota ?? 'todas as notas'}
+                        {ehSubgrupo && (d.filtro_data_de || d.filtro_data_ate) ? ` · ${d.filtro_data_de ?? '…'} a ${d.filtro_data_ate ?? '…'}` : ''}
+                        {!ehSubgrupo && d.agentes?.length ? ` · ${d.agentes.slice(0, 2).join(', ')}${d.agentes.length > 2 ? '…' : ''}` : ''}
+                      </Link>
                     </td>
                     <td>
-                      {ehAnalise && d.status
-                        ? <span className="badge" style={{ background: STATUS[d.status]?.cor ?? '#64748b' }}>{STATUS[d.status]?.label ?? d.status}</span>
-                        : a.tipo.startsWith('importacao') ? <span className="tag">{d.status ?? '—'}</span> : '—'}
+                      <span className="badge" style={{ background: STATUS[d.status]?.cor ?? '#64748b' }}>{STATUS[d.status]?.label ?? d.status}</span>
                     </td>
                     <td style={{ whiteSpace: 'normal', minWidth: 220, maxWidth: 380 }}>
-                      {ehAnalise ? (d.observacao || <span className="hint">sem observação</span>) : '—'}
+                      {d.observacao || <span className="hint">sem observação</span>}
                     </td>
                   </tr>
                 );

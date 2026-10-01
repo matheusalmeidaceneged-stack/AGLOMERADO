@@ -98,24 +98,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="card">
-        <h3>Importações recentes</h3>
-        <div className="tblwrap">
-          <table>
-            <thead><tr><th>Arquivo</th><th>Data</th><th>Total</th><th>Novos</th><th>Existentes</th><th>Duplicados</th><th>Erros</th><th>Status</th></tr></thead>
-            <tbody>
-              {d.importacoes_recentes.map((i: any) => (
-                <tr key={i.id}>
-                  <td>{i.nome_arquivo}</td><td>{new Date(i.data_importacao).toLocaleString('pt-BR')}</td>
-                  <td>{n(i.total_registros)}</td><td>{n(i.novos)}</td><td>{n(i.ja_existentes)}</td>
-                  <td>{n(i.duplicados_arquivo)}</td><td>{n(i.erros)}</td><td>{i.status}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="hint" style={{ marginBottom: 0 }}><Link href="/historico">ver histórico completo →</Link></p>
-      </div>
     </div>
   );
 }

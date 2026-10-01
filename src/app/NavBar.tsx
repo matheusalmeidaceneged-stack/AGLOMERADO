@@ -9,7 +9,6 @@ const LINKS: [string, string][] = [
   ['/import', 'Importar'],
   ['/aglomerados', 'Aglomerados'],
   ['/duplicados', 'Instalações duplicadas'],
-  ['/historico', 'Histórico'],
   ['/auditorias', 'Registro de auditoria'],
 ];
 
