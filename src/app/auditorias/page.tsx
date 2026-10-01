@@ -13,6 +13,7 @@ const ACOES: Record<string, string> = {
   importacao_iniciada: 'Importação iniciada',
   importacao_finalizada: 'Importação finalizada',
   analise_aglomerado: 'Análise de aglomerado',
+  analise_subgrupo_aglomerado: 'Tratativa de subgrupo',
 };
 const fmt = (s: string) => new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 
@@ -20,7 +21,7 @@ export default function Auditorias() {
   const { token } = useAuth();
   const [dados, setDados] = useState<any[]>([]);
   const [erro, setErro] = useState<string | null>(null);
-  const [acao, setAcao] = useState('analise_aglomerado');
+  const [acao, setAcao] = useState('');
   const [status, setStatus] = useState('');
   const [busca, setBusca] = useState('');
 
@@ -31,9 +32,10 @@ export default function Auditorias() {
       .catch(e => setErro(e.message));
   }, [token]);
 
+  const EH_ANALISE = ['analise_aglomerado', 'analise_subgrupo_aglomerado'];
   const filtrados = useMemo(() => dados.filter(a => {
     if (acao && a.tipo !== acao) return false;
-    if (acao === 'analise_aglomerado' && status && a.detalhes?.status !== status) return false;
+    if (EH_ANALISE.includes(a.tipo) && status && a.detalhes?.status !== status) return false;
     if (busca) {
       const alvo = `${a.usuario_email ?? ''} ${a.detalhes?.observacao ?? ''} ${a.detalhes?.nota_dominante ?? ''} ${a.detalhes?.agentes?.join(' ') ?? ''}`.toLowerCase();
       if (!alvo.includes(busca.toLowerCase())) return false;
@@ -41,8 +43,8 @@ export default function Auditorias() {
     return true;
   }), [dados, acao, status, busca]);
 
-  const totalAnalises = dados.filter(a => a.tipo === 'analise_aglomerado').length;
-  const comTratativa = dados.filter(a => a.tipo === 'analise_aglomerado' && a.detalhes?.observacao).length;
+  const totalAnalises = dados.filter(a => EH_ANALISE.includes(a.tipo)).length;
+  const comTratativa = dados.filter(a => EH_ANALISE.includes(a.tipo) && a.detalhes?.observacao).length;
 
   if (erro) return <div className="card" style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>{erro}</div>;
 
@@ -70,7 +72,7 @@ export default function Auditorias() {
             </select>
           </label>
           <label>Situação registrada
-            <select value={status} onChange={e => setStatus(e.target.value)} disabled={acao !== 'analise_aglomerado'}>
+            <select value={status} onChange={e => setStatus(e.target.value)} disabled={!!acao && !EH_ANALISE.includes(acao)}>
               <option value="">Todas</option>
               {Object.entries(STATUS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
             </select>
@@ -90,7 +92,8 @@ export default function Auditorias() {
             <tbody>
               {filtrados.map(a => {
                 const d = a.detalhes ?? {};
-                const ehAnalise = a.tipo === 'analise_aglomerado';
+                const ehAnalise = EH_ANALISE.includes(a.tipo);
+                const ehSubgrupo = a.tipo === 'analise_subgrupo_aglomerado';
                 return (
                   <tr key={a.id}>
                     <td style={{ whiteSpace: 'nowrap' }}>{fmt(a.created_at)}</td>
@@ -99,7 +102,9 @@ export default function Auditorias() {
                     <td>
                       {ehAnalise ? (
                         <Link href={`/aglomerados?abrir=${a.referencia_id}`}>
-                          {d.qtd_execucoes ?? '—'} baixas · {d.nota_dominante ?? '—'}{d.agentes?.length ? ` · ${d.agentes.slice(0, 2).join(', ')}${d.agentes.length > 2 ? '…' : ''}` : ''}
+                          {d.qtd_execucoes ?? '—'} baixas{ehSubgrupo ? ' (subgrupo)' : ''} · {d.nota_dominante ?? d.filtro_nota ?? 'todas as notas'}
+                          {ehSubgrupo && (d.filtro_data_de || d.filtro_data_ate) ? ` · ${d.filtro_data_de ?? '…'} a ${d.filtro_data_ate ?? '…'}` : ''}
+                          {!ehSubgrupo && d.agentes?.length ? ` · ${d.agentes.slice(0, 2).join(', ')}${d.agentes.length > 2 ? '…' : ''}` : ''}
                         </Link>
                       ) : a.tipo.startsWith('importacao') ? (
                         <Link href="/historico">ver na importação</Link>

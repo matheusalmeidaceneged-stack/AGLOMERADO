@@ -118,6 +118,12 @@ export function MapaAglomerados() {
   const [obs, setObs] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [ordem, setOrdem] = useState<{ chave: string; dir: 1 | -1 }>({ chave: 'hora', dir: 1 });
+  const [fData, setFData] = useState({ de: '', ate: '' });
+  const [fNota, setFNota] = useState('');
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [statusSub, setStatusSub] = useState('procedente');
+  const [obsSub, setObsSub] = useState('');
+  const [salvandoSub, setSalvandoSub] = useState(false);
 
   async function carregar(fx = f) {
     if (!token) return;
@@ -154,12 +160,32 @@ export function MapaAglomerados() {
 
   async function abrir(id: string) {
     setSelId(id); setSel(null);
+    setFData({ de: '', ate: '' }); setFNota(''); setSelecionados(new Set()); setObsSub('');
     const res = await fetch('/api/aglomerados/' + id, { headers: H() });
     const d = await res.json();
     if (!res.ok) { setErro(d.error ?? 'erro ao abrir aglomerado'); setSelId(null); return; }
     setSel(d); setStatusForm(d.aglomerado.status_auditoria); setObs(d.aglomerado.observacao ?? '');
   }
   function fechar() { setSelId(null); setSel(null); }
+
+  async function salvarTratativaSubgrupo() {
+    if (!selId || selecionados.size === 0) return;
+    setSalvandoSub(true); setErro(null);
+    const res = await fetch(`/api/aglomerados/${selId}/auditar-subgrupo`, {
+      method: 'POST', headers: H(),
+      body: JSON.stringify({
+        execucao_ids: Array.from(selecionados),
+        filtro_data_de: fData.de || null, filtro_data_ate: fData.ate || null, filtro_nota: fNota || null,
+        status: statusSub, observacao: obsSub,
+      }),
+    });
+    const d = await res.json();
+    setSalvandoSub(false);
+    if (!res.ok) { setErro(d.error ?? 'erro ao registrar tratativa'); return; }
+    setSel((s: any) => s && { ...s, subgrupos: [d.subgrupo, ...(s.subgrupos ?? [])] });
+    setSelecionados(new Set()); setObsSub('');
+    setMsg(`Tratativa registrada para ${d.subgrupo.qtd_execucoes} execuções.`);
+  }
 
   async function salvarAuditoria() {
     if (!selId) return;
@@ -203,6 +229,28 @@ export function MapaAglomerados() {
   }, [sel, ordem]); // eslint-disable-line react-hooks/exhaustive-deps
   const ordenar = (chave: string) => setOrdem(o => (o.chave === chave ? { chave, dir: (o.dir * -1) as 1 | -1 } : { chave, dir: 1 }));
   const seta = (k: string) => (ordem.chave === k ? (ordem.dir === 1 ? ' ▲' : ' ▼') : '');
+
+  const notasDisponiveis = useMemo(() => (agl ? Object.keys(agl.notas as Record<string, number>).sort() : []), [agl]);
+  const execsFiltrados = useMemo(() => execsOrd.filter((e: any) =>
+    (!fData.de || (e.data_real ?? '') >= fData.de) &&
+    (!fData.ate || (e.data_real ?? '') <= fData.ate) &&
+    (!fNota || e.nota_leitura === fNota)
+  ), [execsOrd, fData, fNota]);
+  const idsAuditados = useMemo(() => {
+    const m = new Map<string, string>(); // execucao_id -> status da tratativa mais recente
+    for (const sg of (sel?.subgrupos ?? [])) for (const id of sg.execucao_ids) if (!m.has(id)) m.set(id, sg.status);
+    return m;
+  }, [sel]);
+  const todosFiltradosSelecionados = execsFiltrados.length > 0 && execsFiltrados.every((e: any) => selecionados.has(e.id));
+  function alternarSelecaoTodos() {
+    setSelecionados(prev => {
+      if (todosFiltradosSelecionados) { const s2 = new Set(prev); execsFiltrados.forEach((e: any) => s2.delete(e.id)); return s2; }
+      const s2 = new Set(prev); execsFiltrados.forEach((e: any) => s2.add(e.id)); return s2;
+    });
+  }
+  function alternarSelecaoLinha(id: string) {
+    setSelecionados(prev => { const s2 = new Set(prev); s2.has(id) ? s2.delete(id) : s2.add(id); return s2; });
+  }
 
   const resumo = { susp: lista.filter(a => a.suspeito).length, pend: lista.filter(a => a.status_auditoria === 'pendente').length };
   const notasOrd: [string, number][] = agl ? Object.entries(agl.notas as Record<string, number>).sort((a, b) => b[1] - a[1]) : [];
@@ -368,27 +416,89 @@ export function MapaAglomerados() {
           {selId && agl && (
             <div className="card">
               <h3>Baixas deste aglomerado <span className="hint" style={{ fontWeight: 400 }}>· clique no título da coluna para ordenar</span></h3>
+
+              <div className="filtros" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr', marginBottom: 4 }}>
+                <label>De (data)<input type="date" value={fData.de} onChange={e => setFData(f => ({ ...f, de: e.target.value }))} /></label>
+                <label>Até (data)<input type="date" value={fData.ate} onChange={e => setFData(f => ({ ...f, ate: e.target.value }))} /></label>
+                <label>Nota
+                  <select value={fNota} onChange={e => setFNota(e.target.value)}>
+                    <option value="">Todas</option>
+                    {notasDisponiveis.map(n => <option key={n} value={n}>{n}</option>)}
+                  </select>
+                </label>
+                <div style={{ display: 'flex', alignItems: 'end' }}>
+                  <button className="secondary" style={{ marginLeft: 0 }} onClick={() => { setFData({ de: '', ate: '' }); setFNota(''); }}>Limpar filtro</button>
+                </div>
+              </div>
+              <p className="hint" style={{ margin: '0 0 8px' }}>{execsFiltrados.length} de {execsOrd.length} baixas com esse filtro · {selecionados.size} selecionada(s)</p>
+
               <div className="tblwrap" style={{ maxHeight: 420 }}>
                 <table>
                   <thead>
                     <tr>
+                      <th><input type="checkbox" checked={todosFiltradosSelecionados} onChange={alternarSelecaoTodos} /></th>
                       <th className="sort" onClick={() => ordenar('inst')}>Instalação{seta('inst')}</th>
                       <th>Nota</th><th>Descrição</th><th>Agente</th>
                       <th className="sort" onClick={() => ordenar('hora')}>Data / hora{seta('hora')}</th>
                       <th className="sort" onClick={() => ordenar('dist')}>Distância do endereço{seta('dist')}</th>
+                      <th>Tratativa</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {execsOrd.map((e: any, i: number) => (
-                      <tr key={i}>
+                    {execsFiltrados.map((e: any, i: number) => (
+                      <tr key={i} style={{ background: selecionados.has(e.id) ? 'var(--accent-soft)' : undefined }}>
+                        <td><input type="checkbox" checked={selecionados.has(e.id)} onChange={() => alternarSelecaoLinha(e.id)} /></td>
                         <td>{e.instalacao}</td><td>{e.nota_leitura}</td><td>{e.descricao_nota}</td><td>{e.usuario}</td>
                         <td>{e.data_real ? fmtDia(e.data_real) : '—'} {e.hora}</td>
                         <td>{e.dist === null ? '—' : <span className={`dist ${classeDist(e.dist)}`}>{e.dist.toLocaleString('pt-BR')} m</span>}</td>
+                        <td>{idsAuditados.has(e.id) ? <span className="badge" style={{ background: STATUS[idsAuditados.get(e.id)!]?.cor ?? '#64748b' }}>{STATUS[idsAuditados.get(e.id)!]?.label ?? idsAuditados.get(e.id)}</span> : <span className="hint">—</span>}</td>
                       </tr>
                     ))}
+                    {execsFiltrados.length === 0 && <tr><td colSpan={8} className="hint">Nenhuma baixa com esse filtro.</td></tr>}
                   </tbody>
                 </table>
               </div>
+
+              <div style={{ margin: '14px 0', padding: 12, border: '1px solid var(--border)', borderRadius: 8, background: '#f9fafb' }}>
+                <h4 style={{ margin: '0 0 8px' }}>Registrar tratativa da seleção</h4>
+                {selecionados.size === 0 ? (
+                  <p className="hint" style={{ margin: 0 }}>Marque as linhas acima (ou use o filtro de data/nota e o check do cabeçalho para marcar todas de uma vez) para registrar uma decisão só para essa fatia — por exemplo, "nota C07 do dia 04" autorizada, o resto não.</p>
+                ) : (
+                  <>
+                    <div className="seg">
+                      {Object.entries(STATUS).map(([k, v]) => (
+                        <button key={k} className={statusSub === k ? 'on' : ''} style={statusSub === k ? { background: v.cor } : undefined} onClick={() => setStatusSub(k)}>{v.label}</button>
+                      ))}
+                    </div>
+                    <textarea placeholder="Observação (ex.: agente autorizado a atender a localidade nesse dia)" value={obsSub} onChange={e => setObsSub(e.target.value)} />
+                    <button className="primary" style={{ marginTop: 8 }} onClick={salvarTratativaSubgrupo} disabled={salvandoSub}>
+                      {salvandoSub ? 'Salvando…' : `Registrar tratativa para ${selecionados.size} execução(ões)`}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {sel.subgrupos?.length > 0 && (
+                <>
+                  <h4>Tratativas já registradas neste aglomerado</h4>
+                  <div className="tblwrap" style={{ maxHeight: 220 }}>
+                    <table>
+                      <thead><tr><th>Quando</th><th>Filtro aplicado</th><th>Qtd.</th><th>Situação</th><th>Observação</th></tr></thead>
+                      <tbody>
+                        {sel.subgrupos.map((sg: any) => (
+                          <tr key={sg.id}>
+                            <td>{fmtData(sg.created_at)}</td>
+                            <td>{[sg.filtro_nota, (sg.filtro_data_de || sg.filtro_data_ate) ? `${sg.filtro_data_de ? fmtDia(sg.filtro_data_de) : '…'} a ${sg.filtro_data_ate ? fmtDia(sg.filtro_data_ate) : '…'}` : null].filter(Boolean).join(' · ') || 'sem filtro (seleção manual)'}</td>
+                            <td>{sg.qtd_execucoes}</td>
+                            <td><span className="badge" style={{ background: STATUS[sg.status]?.cor ?? '#64748b' }}>{STATUS[sg.status]?.label ?? sg.status}</span></td>
+                            <td style={{ whiteSpace: 'normal', maxWidth: 320 }}>{sg.observacao || <span className="hint">—</span>}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
             </div>
           )}
         </section>
