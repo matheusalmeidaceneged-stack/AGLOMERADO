@@ -34,6 +34,65 @@ const fmtDia = (s: string) => new Date(s + 'T00:00:00').toLocaleDateString('pt-B
 const classeDist = (d: number | null) => (d === null ? '' : d < 50 ? 'ok' : d <= 300 ? 'med' : 'far');
 const corItem = (a: any) => (a.suspeito && a.status_auditoria === 'pendente' ? '#dc2626' : STATUS[a.status_auditoria].cor);
 
+async function baixarXlsx(nomeArquivo: string, abas: { nome: string; linhas: any[] }[]) {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.utils.book_new();
+  for (const aba of abas) {
+    const ws = XLSX.utils.json_to_sheet(aba.linhas, { skipHeader: false });
+    XLSX.utils.book_append_sheet(wb, ws, aba.nome.slice(0, 31));
+  }
+  XLSX.writeFile(wb, nomeArquivo);
+}
+
+function exportarListaFiltrada(lista: any[]) {
+  const linhas = lista.map(a => ({
+    'Baixas': a.qtd_execucoes,
+    'Instalações': a.qtd_instalacoes,
+    'Nota dominante': a.nota_dominante,
+    '% nota dominante': Math.round(a.pct_nota_dominante * 100) + '%',
+    'Agentes': a.agentes.join(', '),
+    'Duração': duracao(a.janela_minutos),
+    'Dist. média até endereço (m)': a.dist_media_envio_m ?? '',
+    'Candidato a auditoria': a.suspeito ? 'Sim' : 'Não',
+    'Situação da auditoria': STATUS[a.status_auditoria]?.label ?? a.status_auditoria,
+    'Tratativa': a.observacao ?? '',
+    'Latitude': a.centro_lat,
+    'Longitude': a.centro_lng,
+  }));
+  baixarXlsx(`aglomerados_${new Date().toISOString().slice(0, 10)}.xlsx`, [{ nome: 'Aglomerados', linhas }]);
+}
+
+function exportarAglomerado(agl: any, execs: any[]) {
+  const notasOrd = Object.entries(agl.notas as Record<string, number>).sort((a: any, b: any) => b[1] - a[1]);
+  const resumo = [
+    { Campo: 'Quantidade de baixas', Valor: agl.qtd_execucoes },
+    { Campo: 'Instalações distintas', Valor: agl.qtd_instalacoes },
+    { Campo: 'Agente(s)', Valor: agl.agentes.join(', ') },
+    { Campo: 'Primeira execução', Valor: fmtData(agl.primeira_execucao) },
+    { Campo: 'Última execução', Valor: fmtData(agl.ultima_execucao) },
+    { Campo: 'Janela de tempo', Valor: duracao(agl.janela_minutos) },
+    { Campo: 'Ritmo de baixas', Valor: ritmo(agl.qtd_execucoes, agl.janela_minutos) },
+    { Campo: 'Distância média até o endereço', Valor: agl.dist_media_envio_m !== null ? agl.dist_media_envio_m + ' m' : '—' },
+    { Campo: 'Candidato a auditoria', Valor: agl.suspeito ? 'Sim' : 'Não' },
+    { Campo: 'Situação da auditoria', Valor: STATUS[agl.status_auditoria]?.label ?? agl.status_auditoria },
+    { Campo: 'Tratativa', Valor: agl.observacao ?? '' },
+    { Campo: 'Última análise', Valor: agl.auditado_em ? fmtData(agl.auditado_em) : '—' },
+    { Campo: 'Latitude', Valor: agl.centro_lat },
+    { Campo: 'Longitude', Valor: agl.centro_lng },
+    { Campo: '', Valor: '' },
+    { Campo: 'Estratificação por nota', Valor: '' },
+    ...notasOrd.map(([nota, q]: any) => ({ Campo: nota, Valor: `${q} (${Math.round((q / agl.qtd_execucoes) * 100)}%)` })),
+  ];
+  const baixas = execs.map((e: any) => ({
+    'Instalação': e.instalacao, 'Nota': e.nota_leitura, 'Descrição': e.descricao_nota, 'Agente': e.usuario,
+    'Data': e.data_real ? fmtDia(e.data_real) : '', 'Hora': e.hora,
+    'Distância do endereço (m)': e.dist ?? '',
+  }));
+  baixarXlsx(`aglomerado_${agl.qtd_execucoes}baixas_${new Date().toISOString().slice(0, 10)}.xlsx`, [
+    { nome: 'Resumo', linhas: resumo }, { nome: 'Baixas (instalações)', linhas: baixas },
+  ]);
+}
+
 function Ajusta({ alvo, pontos }: { alvo: [number, number] | null; pontos: [number, number][] }) {
   const map = useMap();
   useEffect(() => {
@@ -190,7 +249,10 @@ export function MapaAglomerados() {
               </div>
 
               <div className="card">
-                <h3>Ranking <span className="hint" style={{ fontWeight: 400 }}>· {lista.length} aglomerado(s) nesse filtro · {resumo.susp} candidato(s)</span></h3>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                  <h3 style={{ margin: 0 }}>Ranking <span className="hint" style={{ fontWeight: 400 }}>· {lista.length} aglomerado(s) nesse filtro · {resumo.susp} candidato(s)</span></h3>
+                  <button className="secondary" style={{ marginLeft: 0 }} onClick={() => exportarListaFiltrada(lista)} disabled={lista.length === 0}>Exportar lista (.xlsx)</button>
+                </div>
                 <div className="rk-list">
                   {lista.map(a => (
                     <div key={a.id} className="rk-item" style={{ borderLeftColor: corItem(a) }} onClick={() => abrir(a.id)}>
@@ -218,6 +280,7 @@ export function MapaAglomerados() {
                     <h3>{agl.qtd_execucoes} baixas no mesmo ponto</h3>
                     {agl.suspeito && <span className="badge b-err">CANDIDATO</span>}
                     <span className="badge" style={{ background: STATUS[agl.status_auditoria].cor }}>{STATUS[agl.status_auditoria].label}</span>
+                    <button className="secondary" style={{ marginLeft: 'auto' }} onClick={() => exportarAglomerado(agl, execsOrd)}>Exportar relatório (.xlsx)</button>
                   </div>
                   <p className="hint" style={{ margin: '4px 0 0' }}>
                     {agl.centro_lat.toFixed(6)}, {agl.centro_lng.toFixed(6)} ·{' '}
@@ -288,7 +351,11 @@ export function MapaAglomerados() {
                   <CircleMarker key={a.id} center={[a.centro_lat, a.centro_lng]} radius={Math.min(7 + Math.sqrt(a.qtd_execucoes) * 1.6, 26)}
                     pathOptions={{ color: selId === a.id ? '#000' : cor, weight: selId === a.id ? 3 : 1, fillColor: cor, fillOpacity: 0.55 }}
                     eventHandlers={{ click: () => abrir(a.id) }}>
-                    <Popup><b>{a.qtd_execucoes} baixas</b> · nota {a.nota_dominante} ({Math.round(a.pct_nota_dominante * 100)}%)<br />{a.agentes.join(', ')}<br />clique para auditar</Popup>
+                    <Popup>
+                      <b>{a.qtd_execucoes} baixas</b> · nota {a.nota_dominante} ({Math.round(a.pct_nota_dominante * 100)}%)<br />
+                      {a.agentes.join(', ')}<br />
+                      <button className="primary" style={{ marginTop: 6, padding: '5px 10px', fontSize: '.78rem' }} onClick={() => abrir(a.id)}>Auditar este aglomerado</button>
+                    </Popup>
                   </CircleMarker>
                 );
               })}
