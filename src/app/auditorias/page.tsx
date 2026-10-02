@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/supabase/useAuth';
+import { useMesFiltro, aplicarMesEmParams } from '@/lib/useMesFiltro';
 
 const STATUS: Record<string, { label: string; cor: string }> = {
   pendente: { label: 'Pendente', cor: '#ea580c' },
@@ -16,6 +17,7 @@ const fmt = (s: string | null) => (s ? new Date(s).toLocaleString('pt-BR', { dat
 
 export default function Auditorias() {
   const { token } = useAuth();
+  const { mes, mesDe, mesAte } = useMesFiltro();
   const [dados, setDados] = useState<any[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [acao, setAcao] = useState('');
@@ -27,10 +29,11 @@ export default function Auditorias() {
 
   useEffect(() => {
     if (!token) return;
-    fetch('/api/auditorias-registros', { headers: H() })
+    const p = aplicarMesEmParams(new URLSearchParams(), mesDe, mesAte);
+    fetch('/api/auditorias-registros?' + p, { headers: H() })
       .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error); setDados(j.registros ?? []); })
       .catch(e => setErro(e.message));
-  }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [token, mesDe, mesAte]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const filtrados = useMemo(() => dados.filter(a => {
     if (acao && a.tipo !== acao) return false;
@@ -60,7 +63,7 @@ export default function Auditorias() {
       <div className="page-head">
         <div>
           <h2>Registro de auditoria</h2>
-          <p className="hint">Situação de cada auditoria, observação e a tratativa disciplinar aplicada quando um desvio de conduta é confirmado.</p>
+          <p className="hint">Situação de cada auditoria, observação e a tratativa disciplinar aplicada quando um desvio de conduta é confirmado.{mes ? <> · filtrado pelo mês selecionado (Data Prevista)</> : null}</p>
         </div>
       </div>
 

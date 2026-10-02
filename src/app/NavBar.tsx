@@ -3,6 +3,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/supabase/useAuth';
+import { useMesFiltro, opcoesDeMes } from '@/lib/useMesFiltro';
 
 const LINKS: [string, string][] = [
   ['/dashboard', 'Dashboard'],
@@ -15,6 +16,7 @@ const LINKS: [string, string][] = [
 export function NavBar() {
   const { token, email, loading, signIn, signOut } = useAuth();
   const pathname = usePathname();
+  const { mes, setMes } = useMesFiltro();
   const [em, setEm] = useState(''); const [pw, setPw] = useState(''); const [err, setErr] = useState<string | null>(null);
 
   if (loading) return <div className="nav"><span className="brand">CNL</span></div>;
@@ -32,6 +34,8 @@ export function NavBar() {
     );
   }
 
+  const emDuplicados = pathname?.startsWith('/duplicados');
+
   return (
     <div className="nav">
       <span className="brand">CNL · Auditoria de aglomerados</span>
@@ -39,6 +43,14 @@ export function NavBar() {
         <Link key={href} href={href} className={`link ${pathname?.startsWith(href) ? 'ativo' : ''}`}>{label}</Link>
       ))}
       <span className="sp" />
+      <label className="hint" style={{ color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: 6, opacity: emDuplicados ? 0.5 : 1 }}>
+        Mês (Data Prevista)
+        <select value={mes} onChange={e => setMes(e.target.value)} disabled={emDuplicados} title={emDuplicados ? 'Não se aplica a esta tela' : undefined}
+          style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid #334155', background: '#1e293b', color: '#fff' }}>
+          <option value="">Todos os meses</option>
+          {opcoesDeMes().map(o => <option key={o.valor} value={o.valor}>{o.label}</option>)}
+        </select>
+      </label>
       <span className="user">{email}</span>
       <button className="secondary" onClick={signOut}>Sair</button>
     </div>

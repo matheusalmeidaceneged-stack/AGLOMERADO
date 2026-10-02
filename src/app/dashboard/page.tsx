@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/supabase/useAuth';
+import { useMesFiltro, aplicarMesEmParams } from '@/lib/useMesFiltro';
 
 const ST: [string, string, string][] = [
   ['pendente', 'Pendente', '#ea580c'],
@@ -21,15 +22,17 @@ function duracao(min: number | null) {
 
 export default function Dashboard() {
   const { token } = useAuth();
+  const { mes, mesDe, mesAte } = useMesFiltro();
   const [d, setD] = useState<any>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
-    fetch('/api/dashboard', { headers: { Authorization: `Bearer ${token}` } })
+    const p = aplicarMesEmParams(new URLSearchParams(), mesDe, mesAte);
+    fetch('/api/dashboard?' + p, { headers: { Authorization: `Bearer ${token}` } })
       .then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error); setD(j); })
       .catch(e => setErro(e.message));
-  }, [token]);
+  }, [token, mesDe, mesAte]);
 
   if (erro) return <div className="card" style={{ color: 'var(--red)', borderColor: 'var(--red)' }}>{erro}</div>;
   if (!d) return <p className="hint">Carregando…</p>;
@@ -43,7 +46,9 @@ export default function Dashboard() {
       <div className="page-head">
         <div>
           <h2>Dashboard</h2>
-          <p className="hint">Última importação: {s?.ultima_importacao ? new Date(s.ultima_importacao).toLocaleString('pt-BR') : '—'}</p>
+          <p className="hint">
+            {mes ? <>Período: <b>{mesDe} a {mesAte}</b> (por Data Prevista) · aglomerados e execuções abaixo refletem só esse mês; situação da auditoria continua geral.</> : <>Última importação: {s?.ultima_importacao ? new Date(s.ultima_importacao).toLocaleString('pt-BR') : '—'}</>}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Link href="/import" className="link-btn">Importar planilha</Link>
@@ -54,15 +59,16 @@ export default function Dashboard() {
       <div className="kpis">
         <div className="kpi red"><b>{n(a.candidatos_pendentes)}</b><span>candidatos a auditoria pendentes</span></div>
         <div className="kpi green"><b>{n(auditados)}<small style={{ fontSize: '.9rem', color: 'var(--muted)' }}> / {n(totalAgl)}</small></b><span>aglomerados já auditados</span></div>
-        <div className="kpi orange"><b>{n(s?.total_aglomerados)}</b><span>aglomerados detectados</span></div>
-        <div className="kpi"><b>{n(s?.total_execucoes)}</b><span>execuções no banco</span></div>
-        <div className="kpi gray"><b>{n(s?.total_instalacoes)}</b><span>instalações distintas</span></div>
+        <div className="kpi orange"><b>{n(s?.total_aglomerados)}</b><span>{mes ? 'aglomerados com baixas no mês' : 'aglomerados detectados'}</span></div>
+        <div className="kpi"><b>{n(s?.total_execucoes)}</b><span>{mes ? 'execuções no mês' : 'execuções no banco'}</span></div>
+        <div className="kpi gray"><b>{n(s?.total_instalacoes)}</b><span>instalações distintas{mes ? ' no mês' : ''}</span></div>
         <div className={`kpi ${s?.erros_ultimos_7_dias > 0 ? 'red' : 'gray'}`}><b>{n(s?.erros_ultimos_7_dias)}</b><span>erros de importação (7 dias)</span></div>
       </div>
 
       <div className="grid2">
         <div className="card">
           <h3>Situação da auditoria</h3>
+          <p className="hint" style={{ marginTop: -4 }}>Sempre geral — não muda com o filtro de mês.</p>
           {totalAgl === 0 ? (
             <p className="hint">Nenhum aglomerado calculado ainda. Abra <Link href="/aglomerados">Aglomerados</Link> e clique em “Recalcular aglomerados”.</p>
           ) : (
@@ -78,7 +84,7 @@ export default function Dashboard() {
         </div>
 
         <div className="card">
-          <h3>Maiores aglomerados</h3>
+          <h3>Maiores aglomerados {mes ? 'no mês' : ''}</h3>
           <div className="rk-list">
             {d.top_aglomerados.map((t: any) => (
               <Link key={t.id} href={`/aglomerados?abrir=${t.id}`} className="rk-item" style={{ borderLeftColor: t.suspeito && t.status_auditoria === 'pendente' ? '#dc2626' : cor(t.status_auditoria) }}>
@@ -93,11 +99,10 @@ export default function Dashboard() {
                 </div>
               </Link>
             ))}
-            {d.top_aglomerados.length === 0 && <p className="hint">Sem aglomerados calculados.</p>}
+            {d.top_aglomerados.length === 0 && <p className="hint">Sem aglomerados {mes ? 'nesse mês' : 'calculados'}.</p>}
           </div>
         </div>
       </div>
-
     </div>
   );
 }

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { MapContainer, TileLayer, LayersControl, CircleMarker, Polyline, Popup, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import { useAuth } from '@/lib/supabase/useAuth';
+import { useMesFiltro, aplicarMesEmParams } from '@/lib/useMesFiltro';
 
 const STATUS: Record<string, { label: string; cor: string }> = {
   pendente: { label: 'Pendente', cor: '#ea580c' },
@@ -104,6 +105,7 @@ function Ajusta({ alvo, pontos }: { alvo: [number, number] | null; pontos: [numb
 
 export function MapaAglomerados() {
   const { token } = useAuth();
+  const { mes, mesDe, mesAte } = useMesFiltro();
   const H = () => ({ 'Content-Type': 'application/json', Authorization: `Bearer ${token}` });
 
   const [lista, setLista] = useState<any[]>([]);
@@ -133,12 +135,13 @@ export function MapaAglomerados() {
     if (fx.agente) p.set('agente', fx.agente);
     if (fx.status) p.set('status', fx.status);
     if (fx.suspeito) p.set('suspeito', '1');
+    aplicarMesEmParams(p, mesDe, mesAte);
     const res = await fetch('/api/aglomerados?' + p, { headers: H() });
     const d = await res.json();
     if (!res.ok) { setErro(d.error ?? 'erro ao carregar'); return; }
     setLista(d.aglomerados ?? []);
   }
-  useEffect(() => { carregar(); }, [token]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { carregar(); }, [token, mesDe, mesAte]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // permite abrir um aglomerado direto por link (?abrir=ID), usado pelo dashboard
   useEffect(() => {
@@ -201,7 +204,11 @@ export function MapaAglomerados() {
     setMsg('Análise registrada.');
   }
 
-  const execs: any[] = sel?.execucoes ?? [];
+  const execs: any[] = useMemo(() => {
+    const todas = sel?.execucoes ?? [];
+    if (!mesDe || !mesAte) return todas;
+    return todas.filter((e: any) => e.data_prevista && e.data_prevista >= mesDe && e.data_prevista <= mesAte);
+  }, [sel, mesDe, mesAte]);
   const agl = sel?.aglomerado;
   const centro: [number, number] | null = agl ? [agl.centro_lat, agl.centro_lng] : null;
 
@@ -260,7 +267,8 @@ export function MapaAglomerados() {
       <div className="page-head">
         <div>
           <h2>Aglomerados geográficos</h2>
-          <p className="hint">Baixas cujo ponto de <i>retorno</i> (onde o agente estava) fica a poucos metros uma da outra. É só análise: nenhuma execução é excluída.</p>
+          <p className="hint">Baixas cujo ponto de <i>retorno</i> (onde o agente estava) fica a poucos metros uma da outra. É só análise: nenhuma execução é excluída.
+            {mes ? <> · mostrando só o mês selecionado ({mesDe} a {mesAte}, por Data Prevista) — o ranking traz aglomerados com ao menos 1 baixa nesse mês, e a tabela de baixas também fica recortada por ele.</> : null}</p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'end' }}>
           <label className="hint" style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>Raio (m)
