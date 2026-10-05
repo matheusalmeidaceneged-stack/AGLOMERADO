@@ -23,18 +23,38 @@ function toText(v: unknown): string | null {
   return s === '' ? null : s;
 }
 
+// ignora maiúsculas/minúsculas e espaços extras ao comparar nomes de coluna,
+// para pequenas variações na planilha (espaço a mais, caixa diferente) não
+// derrubarem a importação inteira.
+function normalizarCabecalho(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+const MAPA_NORMALIZADO = new Map<string, keyof ExecucaoNormalizada | 'instalacao'>();
+for (const [coluna, campo] of Object.entries(MAPA_COLUNAS)) {
+  MAPA_NORMALIZADO.set(normalizarCabecalho(coluna), campo);
+}
+const CABECALHOS_CONHECIDOS = new Set(Object.keys(MAPA_COLUNAS).map(normalizarCabecalho));
+
 /**
- * VALIDAÇÃO DAS COLUNAS: garante que os cabeçalhos essenciais existem.
+ * VALIDAÇÃO DAS COLUNAS: garante que os cabeçalhos essenciais existem (com
+ * a mesma tolerância a maiúsculas/espaços usada na normalização) e avisa
+ * quais colunas da planilha não foram reconhecidas por nenhum campo, para
+ * facilitar diagnosticar uma planilha com cabeçalho diferente do esperado.
  */
-export function validarColunas(headers: string[]): { ok: boolean; faltando: string[] } {
+export function validarColunas(headers: string[]): { ok: boolean; faltando: string[]; naoReconhecidas: string[] } {
+  const normalizados = headers.map(normalizarCabecalho);
   const obrigatorias = ['Instalação'];
-  const faltando = obrigatorias.filter(c => !headers.includes(c));
-  return { ok: faltando.length === 0, faltando };
+  const faltando = obrigatorias.filter(c => !normalizados.includes(normalizarCabecalho(c)));
+  const naoReconhecidas = headers.filter((h, i) => !CABECALHOS_CONHECIDOS.has(normalizados[i]));
+  return { ok: faltando.length === 0, faltando, naoReconhecidas };
 }
 
 /**
  * NORMALIZAÇÃO DOS DADOS: converte uma linha bruta (objeto header->valor)
- * no formato padronizado usado no restante do pipeline.
+ * no formato padronizado usado no restante do pipeline. Casa cada coluna da
+ * planilha com o campo correspondente via MAPA_NORMALIZADO (tolerante a
+ * maiúsculas/espaços e a variações de grafia já cadastradas em MAPA_COLUNAS).
  */
 export function normalizarLinha(raw: Record<string, unknown>): ExecucaoNormalizada {
   const out: any = {
@@ -44,8 +64,9 @@ export function normalizarLinha(raw: Record<string, unknown>): ExecucaoNormaliza
     lat_envio: null, lng_envio: null, lat_retorno: null, lng_retorno: null,
     raw_data: raw,
   };
-  for (const [coluna, campo] of Object.entries(MAPA_COLUNAS)) {
-    const valor = raw[coluna];
+  for (const [colunaRaw, valor] of Object.entries(raw)) {
+    const campo = MAPA_NORMALIZADO.get(normalizarCabecalho(colunaRaw));
+    if (!campo) continue;
     if (campo === 'instalacao') out.instalacao = toText(valor) ?? '';
     else if (campo === 'data_prevista' || campo === 'data_real') out[campo] = toIsoDate(valor);
     else if (campo === 'lat_envio' || campo === 'lng_envio' || campo === 'lat_retorno' || campo === 'lng_retorno')

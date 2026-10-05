@@ -35,8 +35,12 @@ export interface ResumoImportacao {
   erros: number;
 }
 
-// Mapeamento das colunas esperadas na planilha (ver CNL_MES.XLSX) para os
-// campos normalizados. Ajuste aqui se a estrutura da base mudar.
+// Mapeamento das colunas esperadas na planilha para os campos normalizados.
+// Algumas colunas têm mais de uma grafia possível (ex.: planilhas diferentes
+// já chegaram com "Latitude Enio" com erro de digitação e também com
+// "Latitude Envio" correto) — por isso cada campo pode ter vários aliases.
+// A comparação de nome de coluna ignora maiúsculas/minúsculas e espaços
+// extras (ver normalizarCabecalho em import/normalize.ts).
 export const MAPA_COLUNAS: Record<string, keyof ExecucaoNormalizada | 'instalacao'> = {
   'Usuário': 'usuario',
   'Data Prevista': 'data_prevista',
@@ -49,7 +53,8 @@ export const MAPA_COLUNAS: Record<string, keyof ExecucaoNormalizada | 'instalaca
   'Hora': 'hora',
   'Envio': 'envio',
   'Retorno': 'retorno',
-  'Latitude Enio': 'lat_envio',
+  'Latitude Envio': 'lat_envio',
+  'Latitude Enio': 'lat_envio', // variante com erro de digitação, já vista em planilhas reais
   'Longitude Envio': 'lng_envio',
   'Latitude Retorno': 'lat_retorno',
   'Longitude Retorno': 'lng_retorno',
