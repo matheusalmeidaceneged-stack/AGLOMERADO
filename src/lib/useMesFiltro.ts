@@ -27,17 +27,22 @@ export function mesParaRange(mes: string): { de: string; ate: string } | null {
   return { de: `${mes}-01`, ate: `${mes}-${String(ultimoDia).padStart(2, '0')}` };
 }
 
-// opções de mês para o seletor: de 18 meses atrás até 2 meses à frente
-export function opcoesDeMes(): { valor: string; label: string }[] {
-  const hoje = new Date();
-  const out: { valor: string; label: string }[] = [];
-  for (let i = -18; i <= 2; i++) {
-    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
-    const valor = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-    const label = d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-    out.push({ valor, label: label.charAt(0).toUpperCase() + label.slice(1) });
-  }
-  return out.reverse();
+export function labelDoMes(valor: string): string {
+  const [y, m] = valor.split('-').map(Number);
+  const label = new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/** Busca, no banco, só os meses que realmente têm execuções com Data Prevista. */
+export function useMesesDisponiveis(token: string | null) {
+  const [meses, setMeses] = useState<string[]>([]);
+  useEffect(() => {
+    if (!token) return;
+    fetch('/api/meses-disponiveis', { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => r.json()).then(d => setMeses(d.meses ?? []))
+      .catch(() => setMeses([]));
+  }, [token]);
+  return meses;
 }
 
 // anexa mes_de/mes_ate a um URLSearchParams já existente, se houver filtro ativo

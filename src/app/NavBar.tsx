@@ -3,7 +3,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/lib/supabase/useAuth';
-import { useMesFiltro, opcoesDeMes } from '@/lib/useMesFiltro';
+import { useMesFiltro, useMesesDisponiveis, labelDoMes } from '@/lib/useMesFiltro';
 
 const LINKS: [string, string][] = [
   ['/dashboard', 'Dashboard'],
@@ -17,6 +17,7 @@ export function NavBar() {
   const { token, email, loading, signIn, signOut } = useAuth();
   const pathname = usePathname();
   const { mes, setMes } = useMesFiltro();
+  const mesesDisponiveis = useMesesDisponiveis(token);
   const [em, setEm] = useState(''); const [pw, setPw] = useState(''); const [err, setErr] = useState<string | null>(null);
 
   if (loading) return <div className="nav"><span className="brand">CNL</span></div>;
@@ -48,7 +49,7 @@ export function NavBar() {
         <select value={mes} onChange={e => setMes(e.target.value)} disabled={emDuplicados} title={emDuplicados ? 'Não se aplica a esta tela' : undefined}
           style={{ padding: '5px 8px', borderRadius: 6, border: '1px solid #334155', background: '#1e293b', color: '#fff' }}>
           <option value="">Todos os meses</option>
-          {opcoesDeMes().map(o => <option key={o.valor} value={o.valor}>{o.label}</option>)}
+          {mesesDisponiveis.map(m => <option key={m} value={m}>{labelDoMes(m)}</option>)}
         </select>
       </label>
       <span className="user">{email}</span>
