@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 import { getUsuarioAutenticado } from '@/lib/auth';
-import { idsExecucoesNoMes, aglomeradosComExecucaoNoMes, parseMes } from '@/lib/mesServidor';
+import { idsExecucoesNoMes, aglomeradosComExecucaoNoMes, estatisticasAglomeradosNoMes, parseMes } from '@/lib/mesServidor';
 
 const COLUNAS = 'id, centro_lat, centro_lng, raio_metros, qtd_execucoes, qtd_instalacoes, notas, nota_dominante, pct_nota_dominante, agentes, unidades, primeira_execucao, ultima_execucao, janela_minutos, dist_media_envio_m, suspeito, status_auditoria, observacao, tratativa_tipo, tratativa_dias_suspensao, auditado_em, updated_at';
 
@@ -19,8 +19,11 @@ export async function GET(req: NextRequest) {
   const mes = parseMes(sp);
 
   const db = supabaseAdmin();
+  // sem mês: filtra por qtd_execucoes (histórico) direto no banco, como antes.
+  // com mês: busca candidatos sem aplicar o "min" ainda — o mínimo de baixas
+  // só pode ser conferido depois de recalcular quantas caem dentro do mês.
   let q = db.from('aglomerados').select(mes ? COLUNAS + ', execucao_ids' : COLUNAS)
-    .gte('qtd_execucoes', min).order('qtd_execucoes', { ascending: false }).limit(mes ? 10000 : limit);
+    .gte('qtd_execucoes', mes ? 1 : min).order('qtd_execucoes', { ascending: false }).limit(mes ? 10000 : limit);
   if (nota) q = q.contains('notas_lista', [nota]);
   if (agente) q = q.contains('agentes', [agente]);
   if (status) {
@@ -34,9 +37,18 @@ export async function GET(req: NextRequest) {
 
   if (!mes) return NextResponse.json({ aglomerados: data });
 
-  const idsNoMes = await idsExecucoesNoMes(db, mes.de, mes.ate);
-  const filtrados = aglomeradosComExecucaoNoMes(data as any, idsNoMes)
-    .slice(0, limit)
-    .map(({ execucao_ids, ...resto }: any) => resto);
+  const candidatos = aglomeradosComExecucaoNoMes(data as any, await idsExecucoesNoMes(db, mes.de, mes.ate));
+  const stats = await estatisticasAglomeradosNoMes(db, candidatos, mes.de, mes.ate);
+
+  const filtrados = candidatos
+    .map((a: any) => {
+      const { execucao_ids, ...resto } = a;
+      const e = stats.get(a.id)!;
+      return { ...resto, qtd_execucoes: e.qtd_execucoes, qtd_instalacoes: e.qtd_instalacoes, nota_dominante: e.nota_dominante, pct_nota_dominante: e.pct_nota_dominante, agentes: e.agentes, janela_minutos: e.janela_minutos, dist_media_envio_m: e.dist_media_envio_m, primeira_execucao: e.primeira_execucao, ultima_execucao: e.ultima_execucao };
+    })
+    .filter((a: any) => a.qtd_execucoes >= min)
+    .sort((a: any, b: any) => b.qtd_execucoes - a.qtd_execucoes)
+    .slice(0, limit);
+
   return NextResponse.json({ aglomerados: filtrados });
 }
