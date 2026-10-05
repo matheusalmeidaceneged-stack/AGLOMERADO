@@ -33,6 +33,14 @@ function ritmo(qtd: number, min: number | null) {
 const fmtData = (s: string | null) => (s ? new Date(s).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 const fmtDia = (s: string) => new Date(s + 'T00:00:00').toLocaleDateString('pt-BR');
 const classeDist = (d: number | null) => (d === null ? '' : d < 50 ? 'ok' : d <= 300 ? 'med' : 'far');
+function tsLocal(data: string | null, hora: string | null): number | null {
+  if (!data) return null;
+  const m = (hora ?? '').match(/^(\d{1,2}):(\d{2})/);
+  const hh = m ? Number(m[1]) : 0, mm = m ? Number(m[2]) : 0;
+  const [y, mo, d] = data.slice(0, 10).split('-').map(Number);
+  if (!y || !mo || !d) return null;
+  return Date.UTC(y, mo - 1, d, hh, mm);
+}
 const corItem = (a: any) => (a.suspeito && a.status_auditoria === 'pendente' ? '#dc2626' : STATUS[a.status_auditoria].cor);
 
 async function baixarXlsx(nomeArquivo: string, abas: { nome: string; linhas: any[] }[]) {
@@ -260,7 +268,29 @@ export function MapaAglomerados() {
   }
 
   const resumo = { susp: lista.filter(a => a.suspeito).length, pend: lista.filter(a => a.status_auditoria === 'pendente').length };
-  const notasOrd: [string, number][] = agl ? Object.entries(agl.notas as Record<string, number>).sort((a, b) => b[1] - a[1]) : [];
+
+  const resumoFiltrado = useMemo(() => {
+    if (!agl) return null;
+    const instalacoes = new Set<string>(); const agentes = new Set<string>(); const notas: Record<string, number> = {};
+    let tMin = Infinity, tMax = -Infinity, somaDist = 0, nDist = 0;
+    for (const e of execsFiltrados) {
+      instalacoes.add(e.instalacao);
+      if (e.usuario) agentes.add(e.usuario);
+      const n = e.nota_leitura ?? '—'; notas[n] = (notas[n] ?? 0) + 1;
+      const t = tsLocal(e.data_real, e.hora);
+      if (t !== null) { tMin = Math.min(tMin, t); tMax = Math.max(tMax, t); }
+      if (e.dist !== null && e.dist !== undefined) { somaDist += e.dist; nDist++; }
+    }
+    return {
+      qtd: execsFiltrados.length, qtd_instalacoes: instalacoes.size, agentes: [...agentes].sort(), notas,
+      primeira_execucao: tMin === Infinity ? null : new Date(tMin).toISOString().slice(0, 19),
+      ultima_execucao: tMax === -Infinity ? null : new Date(tMax).toISOString().slice(0, 19),
+      janela_minutos: tMin === Infinity ? null : Math.round((tMax - tMin) / 60000),
+      dist_media_envio_m: nDist ? Math.round(somaDist / nDist) : null,
+    };
+  }, [execsFiltrados, agl]);
+  const notasOrd: [string, number][] = resumoFiltrado ? Object.entries(resumoFiltrado.notas).sort((a, b) => b[1] - a[1]) : [];
+  const filtroAtivoNoDetalhe = !!mes || !!fData.de || !!fData.ate || !!fNota;
 
   return (
     <div>
@@ -333,35 +363,49 @@ export function MapaAglomerados() {
               {!agl ? <p className="hint">Carregando…</p> : (
                 <>
                   <div className="det-head">
-                    <h3>{agl.qtd_execucoes} baixas no mesmo ponto</h3>
+                    <h3>{resumoFiltrado?.qtd ?? agl.qtd_execucoes} baixas no mesmo ponto</h3>
                     {agl.suspeito && <span className="badge b-err">CANDIDATO</span>}
                     <span className="badge" style={{ background: STATUS[agl.status_auditoria].cor }}>{STATUS[agl.status_auditoria].label}</span>
-                    <button className="secondary" style={{ marginLeft: 'auto' }} onClick={() => exportarAglomerado(agl, execsOrd)}>Exportar relatório (.xlsx)</button>
+                    <button className="secondary" style={{ marginLeft: 'auto' }}
+                      onClick={() => exportarAglomerado({ ...agl, qtd_execucoes: resumoFiltrado?.qtd ?? agl.qtd_execucoes, qtd_instalacoes: resumoFiltrado?.qtd_instalacoes ?? agl.qtd_instalacoes, agentes: resumoFiltrado?.agentes ?? agl.agentes, primeira_execucao: resumoFiltrado?.primeira_execucao ?? agl.primeira_execucao, ultima_execucao: resumoFiltrado?.ultima_execucao ?? agl.ultima_execucao, janela_minutos: resumoFiltrado?.janela_minutos ?? agl.janela_minutos, dist_media_envio_m: resumoFiltrado?.dist_media_envio_m ?? agl.dist_media_envio_m, notas: resumoFiltrado?.notas ?? agl.notas }, execsFiltrados)}>
+                      Exportar relatório (.xlsx)
+                    </button>
                   </div>
+                  {filtroAtivoNoDetalhe && resumoFiltrado && resumoFiltrado.qtd !== agl.qtd_execucoes && (
+                    <p className="hint" style={{ margin: '2px 0 0', color: 'var(--accent)' }}>
+                      Filtro ativo: mostrando {resumoFiltrado.qtd} de {agl.qtd_execucoes} baixas no total deste ponto.
+                    </p>
+                  )}
                   <p className="hint" style={{ margin: '4px 0 0' }}>
                     {agl.centro_lat.toFixed(6)}, {agl.centro_lng.toFixed(6)} ·{' '}
                     <a href={`https://www.google.com/maps?q=${agl.centro_lat},${agl.centro_lng}`} target="_blank" rel="noreferrer">abrir no Google Maps</a>
                   </p>
 
-                  <div className="kpis small">
-                    <div className="kpi gray"><b>{agl.qtd_instalacoes}</b><span>instalações</span></div>
-                    <div className="kpi gray"><b>{agl.agentes.length === 1 ? agl.agentes[0] : `${agl.agentes.length} agentes`}</b><span>{agl.agentes.length === 1 ? 'agente' : agl.agentes.join(', ')}</span></div>
-                    <div className="kpi orange"><b>{duracao(agl.janela_minutos)}</b><span>{fmtData(agl.primeira_execucao)} → {fmtData(agl.ultima_execucao)}</span></div>
-                    <div className="kpi orange"><b>{ritmo(agl.qtd_execucoes, agl.janela_minutos)}</b><span>ritmo de baixas</span></div>
-                    <div className={`kpi ${agl.dist_media_envio_m > 300 ? 'red' : 'gray'}`} style={{ gridColumn: '1 / -1' }}>
-                      <b>{agl.dist_media_envio_m === null ? '—' : Number(agl.dist_media_envio_m).toLocaleString('pt-BR') + ' m'}</b>
-                      <span>distância média até o endereço das instalações</span>
-                    </div>
-                  </div>
+                  {resumoFiltrado && resumoFiltrado.qtd === 0 ? (
+                    <p className="hint" style={{ marginTop: 10 }}>Nenhuma baixa deste ponto cai no filtro atual.</p>
+                  ) : resumoFiltrado && (
+                    <>
+                      <div className="kpis small">
+                        <div className="kpi gray"><b>{resumoFiltrado.qtd_instalacoes}</b><span>instalações</span></div>
+                        <div className="kpi gray"><b>{resumoFiltrado.agentes.length <= 1 ? (resumoFiltrado.agentes[0] ?? '—') : `${resumoFiltrado.agentes.length} agentes`}</b><span>{resumoFiltrado.agentes.length <= 1 ? 'agente' : resumoFiltrado.agentes.join(', ')}</span></div>
+                        <div className="kpi orange"><b>{duracao(resumoFiltrado.janela_minutos)}</b><span>{fmtData(resumoFiltrado.primeira_execucao)} → {fmtData(resumoFiltrado.ultima_execucao)}</span></div>
+                        <div className="kpi orange"><b>{ritmo(resumoFiltrado.qtd, resumoFiltrado.janela_minutos)}</b><span>ritmo de baixas</span></div>
+                        <div className={`kpi ${resumoFiltrado.dist_media_envio_m !== null && resumoFiltrado.dist_media_envio_m > 300 ? 'red' : 'gray'}`} style={{ gridColumn: '1 / -1' }}>
+                          <b>{resumoFiltrado.dist_media_envio_m === null ? '—' : Number(resumoFiltrado.dist_media_envio_m).toLocaleString('pt-BR') + ' m'}</b>
+                          <span>distância média até o endereço das instalações</span>
+                        </div>
+                      </div>
 
-                  <h4>Notas no ponto</h4>
-                  {notasOrd.map(([nota, q]) => (
-                    <div key={nota} className="notebar">
-                      <span className="lbl">{nota}</span>
-                      <div className="trk"><div style={{ width: `${(q / agl.qtd_execucoes) * 100}%` }} /></div>
-                      <span className="n">{q} ({Math.round((q / agl.qtd_execucoes) * 100)}%)</span>
-                    </div>
-                  ))}
+                      <h4>Notas no ponto</h4>
+                      {notasOrd.map(([nota, q]) => (
+                        <div key={nota} className="notebar">
+                          <span className="lbl">{nota}</span>
+                          <div className="trk"><div style={{ width: `${(q / resumoFiltrado.qtd) * 100}%` }} /></div>
+                          <span className="n">{q} ({Math.round((q / resumoFiltrado.qtd) * 100)}%)</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
 
                   <h4>Análise do auditor</h4>
                   <div className="seg">
