@@ -128,6 +128,8 @@ export function MapaAglomerados() {
   const [obs, setObs] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [ordem, setOrdem] = useState<{ chave: string; dir: 1 | -1 }>({ chave: 'hora', dir: 1 });
+  const [enviandoFotoId, setEnviandoFotoId] = useState<string | null>(null);
+  const [gerandoDossie, setGerandoDossie] = useState(false);
   const [fData, setFData] = useState({ de: '', ate: '' });
   const [fNota, setFNota] = useState('');
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
@@ -196,6 +198,100 @@ export function MapaAglomerados() {
     setSel((s: any) => s && { ...s, subgrupos: [d.subgrupo, ...(s.subgrupos ?? [])] });
     setSelecionados(new Set()); setObsSub('');
     setMsg(`Tratativa registrada para ${d.subgrupo.qtd_execucoes} execuções.`);
+  }
+
+  async function enviarFoto(execucaoId: string, file: File) {
+    if (!selId) return;
+    setEnviandoFotoId(execucaoId); setErro(null);
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('aglomerado_id', selId);
+    const res = await fetch(`/api/execucoes/${execucaoId}/fotos`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
+    });
+    const d = await res.json();
+    setEnviandoFotoId(null);
+    if (!res.ok) { setErro(d.error ?? 'erro ao enviar foto'); return; }
+    setSel((s: any) => s && { ...s, fotos: [d.foto, ...(s.fotos ?? [])] });
+  }
+
+  async function removerFoto(execucaoId: string, fotoId: string) {
+    const res = await fetch(`/api/execucoes/${execucaoId}/fotos?foto_id=${fotoId}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) { const d = await res.json(); setErro(d.error ?? 'erro ao remover foto'); return; }
+    setSel((s: any) => s && { ...s, fotos: (s.fotos ?? []).filter((f: any) => f.id !== fotoId) });
+  }
+
+  async function gerarDossie() {
+    if (!agl || !resumoFiltrado) return;
+    setGerandoDossie(true); setErro(null);
+    try {
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF({ unit: 'pt' });
+      const largura = doc.internal.pageSize.getWidth(), altura = doc.internal.pageSize.getHeight();
+      const margem = 40; let y = margem;
+      const fotoDe = (execId: string) => (sel.fotos ?? []).find((f: any) => f.execucao_id === execId);
+
+      async function imagemBase64(url: string): Promise<{ data: string; w: number; h: number } | null> {
+        try {
+          const blob = await (await fetch(url)).blob();
+          const data: string = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result as string); r.onerror = rej; r.readAsDataURL(blob); });
+          const dim: { w: number; h: number } = await new Promise((res) => { const img = new Image(); img.onload = () => res({ w: img.width, h: img.height }); img.src = data; });
+          return { data, ...dim };
+        } catch { return null; }
+      }
+      function quebraPagina(alturaNecessaria: number) {
+        if (y + alturaNecessaria > altura - margem) { doc.addPage(); y = margem; }
+      }
+
+      doc.setFontSize(16); doc.text('Dossiê de auditoria — aglomerado geográfico', margem, y); y += 22;
+      doc.setFontSize(10); doc.setTextColor(100);
+      doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, margem, y); y += 20;
+      doc.setTextColor(0); doc.setFontSize(11);
+      const linhas = [
+        `Local: ${agl.centro_lat.toFixed(6)}, ${agl.centro_lng.toFixed(6)}`,
+        `Baixas no filtro atual: ${resumoFiltrado.qtd} · Instalações: ${resumoFiltrado.qtd_instalacoes}`,
+        `Agente(s): ${resumoFiltrado.agentes.join(', ') || '—'}`,
+        `Período: ${fmtData(resumoFiltrado.primeira_execucao)} → ${fmtData(resumoFiltrado.ultima_execucao)} (${duracao(resumoFiltrado.janela_minutos)})`,
+        `Distância média até o endereço: ${resumoFiltrado.dist_media_envio_m === null ? '—' : resumoFiltrado.dist_media_envio_m + ' m'}`,
+        `Situação da auditoria: ${STATUS[agl.status_auditoria]?.label ?? agl.status_auditoria}`,
+      ];
+      linhas.forEach(l => { doc.text(l, margem, y); y += 16; });
+      if (agl.observacao) { y += 4; doc.setFont('helvetica', 'bold'); doc.text('Observação:', margem, y); y += 14; doc.setFont('helvetica', 'normal'); const obs = doc.splitTextToSize(agl.observacao, largura - margem * 2); doc.text(obs, margem, y); y += obs.length * 14; }
+      y += 10; doc.setFont('helvetica', 'bold'); doc.text('Notas no ponto (filtro atual):', margem, y); y += 14; doc.setFont('helvetica', 'normal');
+      for (const [nota, q] of notasOrd) { doc.text(`${nota}: ${q} (${Math.round((q / resumoFiltrado.qtd) * 100)}%)`, margem + 10, y); y += 14; }
+      y += 10;
+      doc.setDrawColor(200); doc.line(margem, y, largura - margem, y); y += 20;
+
+      doc.setFontSize(13); doc.text(`Baixas (${execsFiltrados.length})`, margem, y); y += 18; doc.setFontSize(10);
+
+      for (const e of execsFiltrados) {
+        const foto = fotoDe(e.id);
+        quebraPagina(foto ? 150 : 56);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`Instalação ${e.instalacao} · ${e.nota_leitura ?? '—'}`, margem, y); y += 14;
+        doc.setFont('helvetica', 'normal');
+        doc.text(`${e.descricao_nota ?? ''}`, margem, y); y += 14;
+        doc.text(`Agente: ${e.usuario ?? '—'} · ${e.data_real ? fmtDia(e.data_real) : '—'} ${e.hora ?? ''} · Distância do endereço: ${e.dist === null ? '—' : e.dist + ' m'}`, margem, y); y += 16;
+        if (foto) {
+          const img = await imagemBase64(foto.url);
+          if (img) {
+            const wAlvo = 160, hAlvo = Math.min(160, (img.h / img.w) * wAlvo);
+            quebraPagina(hAlvo + 10);
+            doc.addImage(img.data, 'JPEG', margem, y, wAlvo, hAlvo);
+            y += hAlvo + 14;
+          }
+        }
+        doc.setDrawColor(230); doc.line(margem, y, largura - margem, y); y += 14;
+      }
+
+      doc.save(`dossie_aglomerado_${agl.id.slice(0, 8)}.pdf`);
+    } catch (e: any) {
+      setErro('Erro ao gerar o dossiê: ' + (e.message ?? e));
+    } finally {
+      setGerandoDossie(false);
+    }
   }
 
   async function salvarAuditoria() {
@@ -370,6 +466,9 @@ export function MapaAglomerados() {
                       onClick={() => exportarAglomerado({ ...agl, qtd_execucoes: resumoFiltrado?.qtd ?? agl.qtd_execucoes, qtd_instalacoes: resumoFiltrado?.qtd_instalacoes ?? agl.qtd_instalacoes, agentes: resumoFiltrado?.agentes ?? agl.agentes, primeira_execucao: resumoFiltrado?.primeira_execucao ?? agl.primeira_execucao, ultima_execucao: resumoFiltrado?.ultima_execucao ?? agl.ultima_execucao, janela_minutos: resumoFiltrado?.janela_minutos ?? agl.janela_minutos, dist_media_envio_m: resumoFiltrado?.dist_media_envio_m ?? agl.dist_media_envio_m, notas: resumoFiltrado?.notas ?? agl.notas }, execsFiltrados)}>
                       Exportar relatório (.xlsx)
                     </button>
+                    <button className="primary" style={{ marginTop: 0 }} onClick={gerarDossie} disabled={gerandoDossie}>
+                      {gerandoDossie ? 'Gerando dossiê…' : 'Gerar dossiê (PDF)'}
+                    </button>
                   </div>
                   {filtroAtivoNoDetalhe && resumoFiltrado && resumoFiltrado.qtd !== agl.qtd_execucoes && (
                     <p className="hint" style={{ margin: '2px 0 0', color: 'var(--accent)' }}>
@@ -494,6 +593,7 @@ export function MapaAglomerados() {
                       <th className="sort" onClick={() => ordenar('hora')}>Data / hora{seta('hora')}</th>
                       <th className="sort" onClick={() => ordenar('dist')}>Distância do endereço{seta('dist')}</th>
                       <th>Tratativa</th>
+                      <th>Foto</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -504,9 +604,22 @@ export function MapaAglomerados() {
                         <td>{e.data_real ? fmtDia(e.data_real) : '—'} {e.hora}</td>
                         <td>{e.dist === null ? '—' : <span className={`dist ${classeDist(e.dist)}`}>{e.dist.toLocaleString('pt-BR')} m</span>}</td>
                         <td>{idsAuditados.has(e.id) ? <span className="badge" style={{ background: STATUS[idsAuditados.get(e.id)!]?.cor ?? '#64748b' }}>{STATUS[idsAuditados.get(e.id)!]?.label ?? idsAuditados.get(e.id)}</span> : <span className="hint">—</span>}</td>
+                        <td>
+                          {(sel.fotos ?? []).filter((f: any) => f.execucao_id === e.id).map((f: any) => (
+                            <a key={f.id} href={f.url} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginRight: 4 }}
+                              onContextMenu={(ev) => { ev.preventDefault(); if (confirm('Remover esta foto?')) removerFoto(e.id, f.id); }}>
+                              <img src={f.url} alt="" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 4, border: '1px solid var(--border)' }} />
+                            </a>
+                          ))}
+                          <label className="secondary" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 8px', fontSize: '.72rem', cursor: 'pointer', marginLeft: 0 }}>
+                            {enviandoFotoId === e.id ? '…' : '+ foto'}
+                            <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} disabled={enviandoFotoId === e.id}
+                              onChange={ev => { const f2 = ev.target.files?.[0]; if (f2) enviarFoto(e.id, f2); ev.target.value = ''; }} />
+                          </label>
+                        </td>
                       </tr>
                     ))}
-                    {execsFiltrados.length === 0 && <tr><td colSpan={8} className="hint">Nenhuma baixa com esse filtro.</td></tr>}
+                    {execsFiltrados.length === 0 && <tr><td colSpan={9} className="hint">Nenhuma baixa com esse filtro.</td></tr>}
                   </tbody>
                 </table>
               </div>
