@@ -24,8 +24,9 @@ export async function GET(req: NextRequest) {
   if (e1) return NextResponse.json({ error: e1.message }, { status: 500 });
   if (eTop) return NextResponse.json({ error: eTop.message }, { status: 500 });
 
+  type AglBase = { id: string; execucao_ids: string[]; [k: string]: any };
   let stats = statsGerais as any;
-  let topFiltrado: any[] = todos ?? [];
+  let topFiltrado: AglBase[] = (todos ?? []) as AglBase[];
   let candidatos_pendentes: number;
 
   if (mes) {

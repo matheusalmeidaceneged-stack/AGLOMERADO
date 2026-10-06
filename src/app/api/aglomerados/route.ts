@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
 
   if (!mes) return NextResponse.json({ aglomerados: data });
 
-  const candidatos = aglomeradosComExecucaoNoMes(data as any, await idsExecucoesNoMes(db, mes.de, mes.ate));
+  const candidatos = aglomeradosComExecucaoNoMes(data as unknown as { id: string; execucao_ids: string[] }[], await idsExecucoesNoMes(db, mes.de, mes.ate));
   const stats = await estatisticasAglomeradosNoMes(db, candidatos, mes.de, mes.ate);
 
   const filtrados = candidatos
