@@ -130,6 +130,7 @@ export function MapaAglomerados() {
   const [ordem, setOrdem] = useState<{ chave: string; dir: 1 | -1 }>({ chave: 'hora', dir: 1 });
   const [enviandoFotoId, setEnviandoFotoId] = useState<string | null>(null);
   const [gerandoDossie, setGerandoDossie] = useState(false);
+  const [linhaAtiva, setLinhaAtiva] = useState<string | null>(null);
   const [fData, setFData] = useState({ de: '', ate: '' });
   const [fNota, setFNota] = useState('');
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
@@ -179,7 +180,7 @@ export function MapaAglomerados() {
     if (!res.ok) { setErro(d.error ?? 'erro ao abrir aglomerado'); setSelId(null); return; }
     setSel(d); setStatusForm(d.aglomerado.status_auditoria); setObs(d.aglomerado.observacao ?? '');
   }
-  function fechar() { setSelId(null); setSel(null); }
+  function fechar() { setSelId(null); setSel(null); setLinhaAtiva(null); }
 
   async function salvarTratativaSubgrupo() {
     if (!selId || selecionados.size === 0) return;
@@ -199,6 +200,21 @@ export function MapaAglomerados() {
     setSelecionados(new Set()); setObsSub('');
     setMsg(`Tratativa registrada para ${d.subgrupo.qtd_execucoes} execuções.`);
   }
+
+  useEffect(() => {
+    if (!selId) return;
+    function aoColar(ev: ClipboardEvent) {
+      const item = Array.from(ev.clipboardData?.items ?? []).find(i => i.type.startsWith('image/'));
+      if (!item) return;
+      ev.preventDefault();
+      const file = item.getAsFile();
+      if (!file) return;
+      if (!linhaAtiva) { setErro('Clique no campo "Foto" da baixa desejada antes de colar (Ctrl+V).'); return; }
+      enviarFoto(linhaAtiva, file);
+    }
+    document.addEventListener('paste', aoColar);
+    return () => document.removeEventListener('paste', aoColar);
+  }, [selId, linhaAtiva]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function enviarFoto(execucaoId: string, file: File) {
     if (!selId) return;
@@ -567,6 +583,7 @@ export function MapaAglomerados() {
           {selId && agl && (
             <div className="card">
               <h3>Baixas deste aglomerado <span className="hint" style={{ fontWeight: 400 }}>· clique no título da coluna para ordenar</span></h3>
+              <p className="hint" style={{ margin: '0 0 8px' }}>Pra anexar um print direto da área de transferência: clique no campo <b>Foto</b> da baixa (ele fica destacado) e aperte <b>Ctrl+V</b> — sem precisar salvar o arquivo antes.</p>
 
               <div className="filtros" style={{ gridTemplateColumns: '1fr 1fr 1fr 1fr', marginBottom: 4 }}>
                 <label>De (data)<input type="date" value={fData.de} onChange={e => setFData(f => ({ ...f, de: e.target.value }))} /></label>
@@ -604,7 +621,9 @@ export function MapaAglomerados() {
                         <td>{e.data_real ? fmtDia(e.data_real) : '—'} {e.hora}</td>
                         <td>{e.dist === null ? '—' : <span className={`dist ${classeDist(e.dist)}`}>{e.dist.toLocaleString('pt-BR')} m</span>}</td>
                         <td>{idsAuditados.has(e.id) ? <span className="badge" style={{ background: STATUS[idsAuditados.get(e.id)!]?.cor ?? '#64748b' }}>{STATUS[idsAuditados.get(e.id)!]?.label ?? idsAuditados.get(e.id)}</span> : <span className="hint">—</span>}</td>
-                        <td>
+                        <td onClick={() => setLinhaAtiva(e.id)}
+                          style={linhaAtiva === e.id ? { outline: '2px solid var(--accent)', outlineOffset: -2, borderRadius: 6, background: 'var(--accent-soft)' } : undefined}
+                          title={linhaAtiva === e.id ? 'Ativa para colar (Ctrl+V)' : 'Clique para ativar e colar uma foto (Ctrl+V)'}>
                           {(sel.fotos ?? []).filter((f: any) => f.execucao_id === e.id).map((f: any) => (
                             <a key={f.id} href={f.url} target="_blank" rel="noreferrer" style={{ display: 'inline-block', marginRight: 4 }}
                               onContextMenu={(ev) => { ev.preventDefault(); if (confirm('Remover esta foto?')) removerFoto(e.id, f.id); }}>
@@ -612,7 +631,7 @@ export function MapaAglomerados() {
                             </a>
                           ))}
                           <label className="secondary" style={{ display: 'inline-flex', alignItems: 'center', padding: '3px 8px', fontSize: '.72rem', cursor: 'pointer', marginLeft: 0 }}>
-                            {enviandoFotoId === e.id ? '…' : '+ foto'}
+                            {enviandoFotoId === e.id ? '…' : linhaAtiva === e.id ? '📋 Ctrl+V ou +foto' : '+ foto'}
                             <input type="file" accept="image/*" capture="environment" style={{ display: 'none' }} disabled={enviandoFotoId === e.id}
                               onChange={ev => { const f2 = ev.target.files?.[0]; if (f2) enviarFoto(e.id, f2); ev.target.value = ''; }} />
                           </label>
